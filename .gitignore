@@ -1,0 +1,57 @@
+# Секреты и локальные переменные окружения (КРИТИЧНО ДЛЯ БЕЗОПАСНОСТИ!)
+.env
+.env.production
+.env.local
+*.pem
+*.key
+*.pub
+certs/
+
+# Временные файлы операционных систем
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Логи сервисов и системные дампы
+*.log
+logs/
+*.pid
+*.sock
+
+# Файлы сред разработки (IDE) и редакторов
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Артефакты Python (тесты, линтеры, кэш)
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+.flake8
+.mypy_cache/
+.venv/
+venv/
+env/
+
+# Артефакты LaTeX (при сборке отчета)
+*.aux
+*.fdb_latexmk
+*.fls
+*.gz
+*.toc
+*.blg
+*.bbl
+*.log
+*.out
+thesis/sources/report/*.pdf
+thesis/sources/slides/*.pdf
+
+# Архивы и временные сборки (кроме финального репозитория)
+*.zip
+*.tar.gz
+*.tgz
+*.rar
