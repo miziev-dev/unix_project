@@ -22,3 +22,4 @@ rules:
   # Запретить использование модуля command, если есть специализированный модуль
   command-instead-of-module:
     severity: MEDIUM
+# test
