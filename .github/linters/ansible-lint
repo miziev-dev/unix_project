@@ -1,0 +1,24 @@
+---
+profile: production # Использовать самый строгий профиль проверок
+
+# Исключить из проверки временные файлы или зависимости
+exclude_paths:
+  - .github/
+  - thesis/
+  - deploy/scripts/tests/
+
+# Набор правил, нарушение которых блокирует Pull Request
+parseable: true
+quiet: false
+
+# Жесткие правила кодинга
+rules:
+  # Именовать каждую задачу (task) для прозрачности логов
+  name:
+    severity: HIGH
+  # Запретить явное хранение паролей в плейбуках (требовать .env или Vault)
+  no-same-owner:
+    severity: MEDIUM
+  # Запретить использование модуля command, если есть специализированный модуль
+  command-instead-of-module:
+    severity: MEDIUM
