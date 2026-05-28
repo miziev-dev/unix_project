@@ -1,0 +1,73 @@
+name: "Проверка качества кода (PR Validation)"
+
+on:
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  linters:
+    name: "Запуск линтеров"
+    runs-on: ubuntu-latest
+    steps:
+      - name: Скачивание репозитория
+        uses: actions/checkout@v4
+
+      - name: Установка линтеров (ShellCheck, yamllint, Hadolint)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y shellcheck yamllint
+          sudo wget -qO /bin/hadolint https://github.com/hadolint/hadolint/releases/download/v2.12.0/hadolint-Linux-x86_64
+          sudo chmod +x /bin/hadolint
+
+      - name: Проверка YAML конфигураций (yamllint)
+        run: yamllint -c .github/linters/.yamllint .
+
+      - name: Проверка Bash-скриптов (ShellCheck)
+        run: find . -type f -name "*.sh" -exec shellcheck -x -s bash {} +
+
+      - name: Проверка Dockerfile (Hadolint)
+        run: |
+          if [ -f "deploy/Dockerfile" ]; then
+            hadolint -c .github/linters/.hadolint.yaml deploy/Dockerfile
+          else
+            echo "Dockerfile не найден, пропускаем шаг..."
+          fi
+
+  infrastructure-tests:
+    name: "Интеграционные тесты кластера MongoDB"
+    runs-on: ubuntu-latest
+    needs: linters
+    steps:
+      - name: Скачивание репозитория
+        uses: actions/checkout@v4
+
+      - name: Подготовка окружения (.env и ключи)
+        run: |
+          # Создаем временный .env для тестов из шаблона
+          cp .env.example .env
+          
+          # Генерируем временный ключ кластера для тестов
+          mkdir -p deploy/docker/mongodb/keys
+          openssl rand -base64 756 > deploy/docker/mongodb/keys/replica.key
+          chmod 400 deploy/docker/mongodb/keys/replica.key
+
+      - name: Запуск кластера MongoDB
+        run: |
+          cd deploy
+          docker compose --env-file ../.env up -d
+
+      - name: Ожидание инициализации реплики
+        run: |
+          echo "Ожидание 20 секунд для инициализации Replica Set..."
+          sleep 20
+
+      - name: Запуск скрипта тестирования
+        run: |
+          bash deploy/scripts/tests/test_mongo.sh
+
+      - name: Остановка и очистка мусора
+        if: always()
+        run: |
+          cd deploy
+          docker compose down -v
