@@ -118,7 +118,7 @@ os_project/
 
 ```bash
 git clone <url-репозитория>
-cd os_project
+cd unix_project
 ```
 
 ### 2. Настройка переменных окружения
