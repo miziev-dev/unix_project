@@ -1,9 +1,18 @@
 #!/bin/bash
-set -euo pipefail
 # @file bootstrap.sh
 # @brief Первичная подготовка ОС, создание сетей и генерация ключей репликации.
-# @author Tech Lead
+# @author Мизиев Рашид Саит-Алиевич (rasidmiziev279@gmail.com)
+# @date 2026-05-28
 # @version 1.0.0
+# @license GNU GPLv3 <https://gnu.org>
+#
+# @details
+# Данный сценарий автоматизирует выполнение следующих этапов:
+# 1. Проверка наличия файла .env с переменными окружения.
+# 2. Создание директорий для ключей и конфигурации кластера.
+# 3. Генерация ключа авторизации Replica Set (replica.key).
+set -euo pipefail
+
 
 KEY_DIR="deploy/docker/mongodb/keys"
 KEY_FILE="${KEY_DIR}/replica.key"
