@@ -1,0 +1,37 @@
+name: Deploy Technical Documentation to GitHub Pages
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'docs/**'
+      - 'README.md'
+      - 'mkdocs.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-node: '3.11'
+
+      - name: Install MkDocs and Plugins
+        run: |
+          python -m pip install --upgrade pip
+          pip install mkdocs mkdocs-material
+
+      - name: Build and Deploy Documentation
+        run: |
+          # Автоматическая сборка сайта и пуш скомпилированного HTML в ветку gh-pages
+          mkdocs gh-deploy --force
