@@ -1,24 +1,108 @@
 services:
+
   mongo-primary:
     image: mongo:6.0.28
     container_name: mongo-primary
     restart: always
-    command: ["mongod", "--bind_ip_all"]
+    command: ["mongod", "--bind_ip_all", "--replSet", "${MONGO_REPLICA_SET_NAME}"]
     environment:
       MONGO_INITDB_ROOT_USERNAME: ${MONGO_INITDB_ROOT_USERNAME}
       MONGO_INITDB_ROOT_PASSWORD: ${MONGO_INITDB_ROOT_PASSWORD}
     ports:
       - "27017:27017"
+    volumes:
+      # Персистентное хранение данных БД в named volume
+      - mongo_primary_data:/data/db
+      # Конфигурация монтируется с хоста в режиме read-only
+      - ../config/mongodb/mongod.conf:/etc/mongod.conf:ro
+      # Ключ репликации монтируется с хоста в режиме read-only
+      - ../deploy/docker/mongodb/keys/replica.key:/opt/keyfile/replica.key:ro
+    networks:
+      - backend-net
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  mongo-secondary:
+    image: mongo:6.0.28
+    container_name: mongo-secondary
+    restart: always
+    command: ["mongod", "--bind_ip_all", "--replSet", "${MONGO_REPLICA_SET_NAME}"]
+    volumes:
+      # Отдельный named volume для данных реплики
+      - mongo_secondary_data:/data/db
+      - ../config/mongodb/mongod.conf:/etc/mongod.conf:ro
+      - ../deploy/docker/mongodb/keys/replica.key:/opt/keyfile/replica.key:ro
+    networks:
+      - backend-net
+    depends_on:
+      mongo-primary:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  mongo-arbiter:
+    image: mongo:6.0.28
+    container_name: mongo-arbiter
+    restart: always
+    command: ["mongod", "--bind_ip_all", "--replSet", "${MONGO_REPLICA_SET_NAME}"]
+    volumes:
+      # Арбитр хранит минимум данных — только метаданные кластера
+      - mongo_arbiter_data:/data/db
+      - ../config/mongodb/mongod.conf:/etc/mongod.conf:ro
+      - ../deploy/docker/mongodb/keys/replica.key:/opt/keyfile/replica.key:ro
+    networks:
+      - backend-net
+    depends_on:
+      mongo-primary:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
 
   mongo-express:
     image: mongo-express:1.0.2
     container_name: mongo-express
     restart: always
     depends_on:
-      - mongo-primary
+      # Ожидаем готовности всех нод перед стартом UI
+      mongo-primary:
+        condition: service_healthy
+      mongo-secondary:
+        condition: service_healthy
+      mongo-arbiter:
+        condition: service_healthy
     ports:
       - "8081:8081"
     environment:
       ME_CONFIG_MONGODB_URL: mongodb://${MONGO_INITDB_ROOT_USERNAME}:${MONGO_INITDB_ROOT_PASSWORD}@mongo-primary:27017/
       ME_CONFIG_BASICAUTH_USERNAME: ${ME_CONFIG_BASICAUTH_USERNAME}
       ME_CONFIG_BASICAUTH_PASSWORD: ${ME_CONFIG_BASICAUTH_PASSWORD}
+    networks:
+      - backend-net
+
+# Именованные тома для персистентного хранения данных каждой ноды
+volumes:
+  mongo_primary_data:
+    name: mongo_primary_data
+  mongo_secondary_data:
+    name: mongo_secondary_data
+  mongo_arbiter_data:
+    name: mongo_arbiter_data
+
+# Изолированные сети по уровням архитектуры
+# Дефолтная сеть (default) не используется
+networks:
+  backend-net:
+    driver: bridge
+    name: mongo_backend_net
