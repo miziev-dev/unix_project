@@ -1,0 +1,100 @@
+name: Create Production Release, Compile TeX or Verify Artifacts Time
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-verify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # Полная история для корректной проверки времени изменения
+
+      # ==============================================================================
+      # ЭТАП 1. АВТОМАТИЧЕСКАЯ СБОРКА ИЗ LATEX (ЕСЛИ ПРИМЕНИМО)
+      # ==============================================================================
+      - name: Check for LaTeX Source Files
+        id: check_tex
+        run: |
+          if [ -f "thesis/sources/report/report.tex" ]; then
+            echo "has_tex=true" >> $GITHUB_OUTPUT
+            echo "LOG: Обнаружены исходные файлы LaTeX. Будет выполнена автокомпиляция."
+          else
+            echo "has_tex=false" >> $GITHUB_OUTPUT
+            echo "LOG: Файлы LaTeX не найдены. Ожидаются бинарные исходники LibreOffice."
+          fi
+
+      - name: Install TeX Live and Tools
+        if: steps:check_tex.outputs.has_tex == 'true'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y texlive-latex-extra texlive-fonts-recommended texlive-lang-cyrillic latexmk
+
+      - name: Compile Technical Report (LaTeX)
+        if: steps:check_tex.outputs.has_tex == 'true'
+        run: |
+          cd thesis/sources/report/
+          latexmk -pdf -interaction=nonstopmode report.tex
+          cp report.pdf ../../report.pdf
+
+      - name: Compile Presentation Slides (LaTeX Beamer)
+        if: steps:check_tex.outputs.has_tex == 'true'
+        run: |
+          cd thesis/sources/slides/
+          latexmk -pdf -interaction=nonstopmode slides.tex
+          cp slides.pdf ../../slides.pdf
+
+      # ==============================================================================
+      # ЭТАП 2. ПРОВЕРКА ВРЕМЕНИ ИЗМЕНЕНИЯ ДЛЯ LIBREOFFICE (ЕСЛИ LATEX НЕ ИСПОЛЬЗУЕТСЯ)
+      # ==============================================================================
+      - name: Verify PDF and Sources Timestamps (For LibreOffice/ODT)
+        if: steps:check_tex.outputs.has_tex == 'false'
+        run: |
+          echo "LOG: Запуск валидации актуальности файлов LibreOffice..."
+
+          # Проверка существования обязательных файлов
+          if [ ! -f "thesis/report.pdf" ] || [ ! -f "thesis/sources/report.odt" ]; then
+            echo "ERROR: Отсутствует report.pdf или исходник report.odt!" && exit 1
+          fi
+          if [ ! -f "thesis/slides.pdf" ] || [ ! -f "thesis/sources/slides.odp" ]; then
+            echo "ERROR: Отсутствует slides.pdf или исходник slides.odp!" && exit 1
+          fi
+
+          # Извлечение времени последнего изменения файлов в секундах (Epoch time)
+          TIME_REPORT_SRC=$(stat -c %Y thesis/sources/report.odt)
+          TIME_REPORT_PDF=$(stat -c %Y thesis/report.pdf)
+          TIME_SLIDES_SRC=$(stat -c %Y thesis/sources/slides.odp)
+          TIME_SLIDES_PDF=$(stat -c %Y thesis/slides.pdf)
+
+          # Сравнение: PDF не должен быть старше (меньше по времени), чем его исходник
+          if [ "$TIME_REPORT_PDF" -lt "$TIME_REPORT_SRC" ]; then
+            echo "ERROR: Файл thesis/report.pdf устарел! Исходный файл report.odt был изменен позже. Переэкспортируйте PDF." && exit 1
+          fi
+          if [ "$TIME_SLIDES_PDF" -lt "$TIME_SLIDES_SRC" ]; then
+            echo "ERROR: Файл thesis/slides.pdf устарел! Исходный файл slides.odp был изменен позже. Переэкспортируйте PDF." && exit 1
+          fi
+          echo "SUCCESS: Все PDF-документы актуальны и соответствуют исходникам."
+
+      # ==============================================================================
+      # ЭТАП 3. ПУБЛИКАЦИЯ В GITHUB RELEASES
+      # ==============================================================================
+      - name: Create Production Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: Release ${{ github.ref_name }}
+          draft: false
+          prerelease: false
+          body: |
+            ## Стабильный релиз курсового проекта ${{ github.ref_name }}
+            Автоматическая верификация академических и инженерных артефактов успешно пройдена.
+          files: |
+            thesis/report.pdf
+            thesis/slides.pdf
