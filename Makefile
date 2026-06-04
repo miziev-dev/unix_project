@@ -1,13 +1,11 @@
-# Переменная для вызова Docker Compose (автоопределение)
-DC := $(shell command -v docker compose > /dev/null 2>&1 && echo "docker-compose" || echo "docker-compose")
+# Используем docker compose v2 (плагин) — обязательно наличие docker-compose-plugin
+DC := docker compose
 
-.PHONY: setup up down clean backup test hardening
-
-# ... (остальные строки те же)
+.PHONY: setup up down clean backup test hardening ps logs
 
 up: setup hardening
 	@echo "==> Запуск кластера MongoDB..."
-	cd deploy && docker-compose up -d --build
+	cd deploy && $(DC) up -d --build
 
 setup:
 	@echo "==> Подготовка хоста и генерация ключей кластера..."
@@ -33,8 +31,9 @@ test:
 hardening:
 	@echo "==> Применение политик безопасности ОС..."
 	sudo bash security/hardening.sh
+
 ps:
-	cd deploy && docker-compose ps
+	cd deploy && $(DC) ps
 
 logs:
-	cd deploy && docker-compose logs -f
+	cd deploy && $(DC) logs -f

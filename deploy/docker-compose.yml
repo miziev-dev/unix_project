@@ -4,7 +4,7 @@ services:
     image: mongo:6.0.28
     container_name: mongo-primary
     restart: always
-    command: ["mongod", "--bind_ip_all", "--replSet", "${MONGO_REPLICA_SET_NAME}"]
+    command: ["mongod", "--bind_ip_all", "--replSet", "${MONGO_REPLICA_SET_NAME}", "--keyFile", "/opt/keyfile/replica.key"]
     environment:
       MONGO_INITDB_ROOT_USERNAME: ${MONGO_INITDB_ROOT_USERNAME}
       MONGO_INITDB_ROOT_PASSWORD: ${MONGO_INITDB_ROOT_PASSWORD}
@@ -30,7 +30,7 @@ services:
     image: mongo:6.0.28
     container_name: mongo-secondary
     restart: always
-    command: ["mongod", "--bind_ip_all", "--replSet", "${MONGO_REPLICA_SET_NAME}"]
+    command: ["mongod", "--bind_ip_all", "--replSet", "${MONGO_REPLICA_SET_NAME}", "--keyFile", "/opt/keyfile/replica.key"]
     volumes:
       # Отдельный named volume для данных реплики
       - mongo_secondary_data:/data/db
@@ -52,7 +52,7 @@ services:
     image: mongo:6.0.28
     container_name: mongo-arbiter
     restart: always
-    command: ["mongod", "--bind_ip_all", "--replSet", "${MONGO_REPLICA_SET_NAME}"]
+    command: ["mongod", "--bind_ip_all", "--replSet", "${MONGO_REPLICA_SET_NAME}", "--keyFile", "/opt/keyfile/replica.key"]
     volumes:
       # Арбитр хранит минимум данных — только метаданные кластера
       - mongo_arbiter_data:/data/db
