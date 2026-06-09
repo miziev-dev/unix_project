@@ -3,7 +3,7 @@
 # @brief Интеграционные тесты работоспособности кластера MongoDB Replica Set.
 # @author Мизиев Рашид Саит-Алиевич (rasidmiziev279@gmail.com)
 # @date 2026-05-28
-# @version 1.1.0
+# @version 1.2.0
 # @license GNU GPLv3 <https://gnu.org>
 #
 # @details
@@ -37,12 +37,13 @@ wait_for_mongo() {
 # @return 0 если Replica Set активен, 1 если нет.
 test_replica_set() {
     echo "LOG: Тест 1. Проверка состояния Replica Set..."
-    RS_STATUS=$(docker exec mongo-primary mongosh --quiet --eval "rs.status().ok" 2>/dev/null || echo "0")
+    RS_STATUS=$(docker exec mongo-primary mongosh --quiet \
+        --eval "rs.status().ok" 2>/dev/null | tail -1 | tr -d '[:space:]')
     if [ "${RS_STATUS}" = "1" ]; then
         echo -e "${GREEN}SUCCESS: Replica Set активен.${NC}"
         return 0
     else
-        echo -e "${RED}ERROR: Replica Set не инициализирован!${NC}" >&2
+        echo -e "${RED}ERROR: Replica Set не инициализирован! (получено: '${RS_STATUS}')${NC}" >&2
         return 1
     fi
 }
