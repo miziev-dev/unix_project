@@ -1,0 +1,14 @@
+\frametitle{Интеграционное тестирование (test\_mongo.sh)}
+Для валидации корректности сборки репликации и проверки доступности СУБД перед продакшн-эксплуатацией разработан автоматический тест. Скрипт проверяет систему в три этапа:
+		\vfill
+		\begin{itemize}
+			\item \textbf{Этап 1}: Циклическая проверка готовности сетевого сокета СУБД (\texttt{db.adminCommand('ping')}) с таймаутом ожидания в 60 секунд.
+			\item \textbf{Этап 2}: Проверка статуса инициализации Replica Set.
+			\item \textbf{Этап 3}: Тест сквозной операции записи (\texttt{db.test.insertOne()}) для проверки доступности Primary-ноды на чтение и запись.
+		\end{itemize}
+		\vfill
+		\textbf{Запрос статуса репликации в скрипте:}
+		\vfill
+		\begin{lstlisting}[language=bash]
+			RS_STATUS=$(docker exec mongo-primary mongosh --quiet --eval "rs.status().ok")
+		\end{lstlisting}

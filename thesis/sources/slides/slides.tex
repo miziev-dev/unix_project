@@ -1,0 +1,253 @@
+\documentclass[10pt]{beamer}
+
+% Настройка темы презентации
+\usetheme{Madrid}
+\usecolortheme{whale}
+
+\usepackage[utf8]{inputenc}
+\usepackage[T2A]{fontenc}
+\usepackage[russian]{babel}
+\usepackage{listings}
+
+% Настройка листингов (исправлен конфликт xcolor и убран неизвестный language)
+\definecolor{codegray}{rgb}{0.5,0.5,0.5}
+\definecolor{backcolour}{rgb}{0.95,0.95,0.92}
+\definecolor{keywordblue}{rgb}{0.05,0.2,0.65}
+
+\lstset{
+	backgroundcolor=\color{backcolour},   
+	commentstyle=\color{codegray}\itshape,
+	keywordstyle=\color{keywordblue}\bfseries,
+	basicstyle=\ttfamily\tiny,
+	breaklines=true,                 
+	showspaces=false,                
+	showstringspaces=false,
+	frame=single
+}
+
+\title[СУБД MongoDB]{Развертывание и настройка NoSQL базы данных MongoDB в режиме Replica Set}
+\subtitle{Курсовой проект по курсу «Администрирование Unix-подобных систем»}
+\author[Мизиев Р. С.]{Выполнили: \\ \textbf{Мизиев Рашид Саит-Алиевич} \\ \textbf{Сорокина Диана Борисовна} \\ \textbf{Деккер Полина Игоревна}}
+\institute[ЮФУ]{Южный федеральный уни1верситет \\ Физический факультет}
+\date{\the\year}
+
+\begin{document}
+	
+	% Слайд 1: Титульный
+	\begin{frame}
+		\titlepage
+	\end{frame}
+	
+	% Слайд 2: Распределение ролей в группе (Добавлено по запросу)
+	\begin{frame}{Распределение ролей и индивидуальный вклад}
+		\begin{itemize}
+			\item \textbf{Мизиев Рашид} — \textbf{Системный администратор/ ТехЛид} \\ 
+			\textit{Чем занимался в проекте:} Разработка архитектуры распределенного кластера (топология PSA). Написание декларативного манифеста \texttt{docker-compose.yml}, профилирование и оптимизация параметров СУБД в \texttt{mongod.conf}, конфигурация ограничений оперативной памяти для движка WiredTiger.
+			\vfill
+			\item \textbf{Сорокина Диана} — \textbf{DevOps-инженер} \\ 
+			\textit{Чем занимался в проекте:} Автоматизация процессов развертывания и инициализации окружения хоста (\texttt{bootstrap.sh}). Скриптование процессов «горячего» резервного копирования и ротации бэкапов (\texttt{backup.sh}). Настройка CI/CD пайплайнов автоматической валидации и тестирования в GitHub Actions.
+			\vfill
+			\item \textbf{Деккер Полина} — \textbf{Специалист по информационной безопасности} \\ 
+			\textit{Чем занимался в проекте:} Реализация многоуровневой стратегии безопасности (Hardening). Создание сценария настройки межсетевого экрана хоста (\texttt{hardening.sh}), изоляция приватных виртуальных сетей Docker, генерация и внедрение \texttt{keyFile} авторизации узлов репликации.
+		\end{itemize}
+	\end{frame}
+	
+	% Слайд 3: Актуальность
+	\begin{frame}{Актуальность проекта и проблематика}
+		\begin{itemize}
+			\item \textbf{Высокая доступность}: В современных нагруженных системах падение одиночного сервера БД означает простой всей бизнес-логики.
+			\item \textbf{NoSQL решения}: При работе с неструктурированными или часто меняющимися данными СУБД MongoDB предоставляет гибкость и горизонтальное масштабирование.
+			\item \textbf{Методология GitOps и IaC}: Ручная настройка конфигурационных файлов и распределенных кластеров приводит к «дрейфу конфигураций» (configuration drift). Необходима 100\% автоматизация.
+		\end{itemize}
+		\vfill
+		\begin{block}{Проблема единой точки отказа}
+			Классическая одиночная инсталляция СУБД уязвима к аппаратным сбоям хоста. Требуется внедрение механизмов автоматического переключения ролей (Failover).
+		\end{block}
+	\end{frame}
+	
+	% Слайд 4: Цели и задачи
+	\begin{frame}{Цели и задачи работы}
+		\begin{block}{Цель работы}
+			Проектирование, развертывание, оптимизация и защита распределенного кластера NoSQL СУБД MongoDB высокой доступности в контейнеризированной среде под управлением ОС Linux.
+		\end{block}
+		\vfill
+		\textbf{Задачи для достижения цели:}
+		\begin{enumerate}
+			\item Разработка архитектуры и развертывание кластера MongoDB Replica Set.
+			\item Автоматизация подготовки окружения и ограничения ресурсов.
+			\item Построение системы многоуровневой безопасности (UFW, \texttt{keyFile}).
+			\item Разработка сценариев «горячего» резервного копирования и тестирования.
+			\item Настройка непрерывной интеграции (CI/CD) на базе GitHub Actions.
+		\end{enumerate}
+	\end{frame}
+	
+	% Слайд 5: Архитектура Replica Set
+	\begin{frame}{Архитектура распределенного кластера}
+		Для исключения единой точки отказа выбрана официальная топология \textbf{Replica Set} с конфигурацией \texttt{PSA} (Primary-Secondary-Arbiter):
+		\vfill
+		\begin{itemize}
+			\item \textbf{mongo-primary}: Главный узел, принимает все операции записи и чтения по умолчанию. Приоритет выборности: \texttt{priority: 2}.
+			\item \textbf{mongo-secondary}: Вторичный узел, зеркалирует журнал операций (Oplog) лидера. Готов занять его место при сбое. Приоритет: \texttt{priority: 1}.
+			\item \textbf{mongo-arbiter}: Узел-арбитр. Не хранит данные и не реплицирует логику, участвует исключительно в голосовании при выборах лидера. Флаг: \texttt{arbiterOnly: true}.
+		\end{itemize}
+	\end{frame}
+	
+	% Слайд 6: Сетевая инфраструктура
+	\begin{frame}{Сетевая инфраструктура и изоляция}
+		Безопасность сетевого контура реализована через виртуализацию Docker:
+		\vfill
+		\begin{itemize}
+			\item Создана выделенная изолированная сеть \texttt{backend-net} драйвера \texttt{bridge}.
+			\item Все три ноды MongoDB взаимодействуют исключительно внутри этой подсети.
+			\item Внешний доступ к портам \texttt{27017} узлов закрыт для хост-машины и внешней сети.
+		\end{itemize}
+		\vfill
+		\begin{block}{Панель администрирования}
+			Для визуального контроля в сеть интегрирован контейнер \textbf{Mongo Express}. Доступ к его веб-интерфейсу (\texttt{8081}) защищен базовой HTTP-аутентификацией через переменные окружения.
+		\end{block}
+	\end{frame}
+	
+	% Слайд 7: Автоматизация (Docker Compose) - ИСПРАВЛЕНО (Листинг вынесен из блоков)
+	\begin{frame}[fragile]{Автоматизация развертывания: Декларативный манифест}
+		Инфраструктура описана как код в файле \texttt{docker-compose.yml}. Применяются официальные стабильные образы \texttt{mongo:6.0.28}.
+		\vfill
+		\textbf{Фрагмент описания сервиса Primary:}
+		\vfill
+		\begin{lstlisting}
+			services:
+			mongo-primary:
+			image: mongo:6.0.28
+			container_name: mongo-primary
+			restart: always
+			command: ["mongod", "--bind_ip_all", "--replSet", "${MONGO_REPLICA_SET_NAME}", "--keyFile", "/opt/keyfile/replica.key"]
+			volumes:
+			- mongo_primary_data:/data/db
+			- ../config/mongodb/mongod.conf:/etc/mongod.conf:ro
+			- ../deploy/docker/mongodb/keys/replica.key:/opt/keyfile/replica.key:ro
+			networks:
+			- backend-net
+		\end{lstlisting}
+	\end{frame}
+	
+	% Слайд 8: Сценарий Bootstrap - ИСПРАВЛЕНО (Язык заменен на bash, листинг на верхнем уровне)
+	\begin{frame}[fragile]{Первичная подготовка среды (bootstrap.sh)}
+		Скрипт \texttt{bootstrap.sh} полностью исключает ручную подготовку директорий серверов перед развертыванием:
+		\vfill
+		\begin{enumerate}
+			\item Проверяет наличие локального файла секретов и настроек \texttt{.env}.
+			\item Создает иерархию каталогов для конфигураций и ключей.
+			\item Автоматически генерирует высокоэнтропийный ключ репликации через OpenSSL.
+		\end{enumerate}
+		\vfill
+		\textbf{Генерация ключа взаимной авторизации узлов:}
+		\vfill
+		\begin{lstlisting}[language=bash]
+			if [[ ! -f "${KEY_FILE}" ]]; then
+			openssl rand -base64 756 > "${KEY_FILE}"
+			chmod 400 "${KEY_FILE}"
+			fi
+		\end{lstlisting}
+	\end{frame}
+	
+	% Слайд 9: Оптимизация WiredTiger - ИСПРАВЛЕНО
+	\begin{frame}[fragile]{Оптимизация производительности СУБД}
+		По умолчанию движок \textbf{WiredTiger} резервирует под внутренний кэш значительный объем ОЗУ хоста, что в контейнерной среде при запуске 3-х нод ведет к падению хоста из-за \textbf{OOM Killer}.
+		\vfill
+		В конфигурационном файле \texttt{mongod.conf} произведено жесткое ограничение ресурсов.
+		\vfill
+		\textbf{Конфигурация лимитов кэша памяти:}
+		\vfill
+		\begin{lstlisting}
+			storage:
+			dbPath: /data/db
+			engine: wiredTiger
+			wiredTiger:
+			engineConfig:
+			cacheSizeGB: 1.0
+		\end{lstlisting}
+	\end{frame}
+	
+	% Слайд 10: Обеспечение безопасности
+	\begin{frame}{Обеспечение безопасности (Hardening)}
+		Защита системы реализована на уровне ОС хоста и на уровне самого приложения:
+		\vfill
+		\begin{itemize}
+			\item \textbf{Права доступа}: На сгенерированный \texttt{replica.key} накладываются строгие права \texttt{chmod 400} (чтение только владельцем), без которых движок MongoDB отклоняет запуск.
+			\item \textbf{Авторизация СУБД}: В блоке \texttt{security} активирована директива \texttt{authorization: enabled}.
+			\item \textbf{Хостовый Межсетевой экран (UFW)}: Сценарий \texttt{hardening.sh} настраивает брандмауэр по принципу «запрещено все, кроме явно разрешенного» — открыты порты \texttt{22} (SSH), \texttt{80}, \texttt{443}. Порт базы данных закрыт снаружи.
+		\end{itemize}
+	\end{frame}
+	
+	% Слайд 11: Резервное копирование - ИСПРАВЛЕНО
+	\begin{frame}[fragile]{Автоматизация резервного копирования}
+		Разработан сценарий \texttt{backup.sh}, реализующий стратегию «горячего» бэкапа (Hot Backup) без остановки контейнеров кластера.
+		\vfill
+		\begin{itemize}
+			\item Выполняет утилиту \texttt{mongodump} внутри контейнера \texttt{mongo-primary} с флагом \texttt{--gzip} для сжатия.
+			\item Безопасно извлекает архив на хост-машину через \texttt{docker cp}.
+			\item \textbf{Ротация архивов}: Автоматически очищает старые резервные копии, предотвращая переполнение дискового пространства хоста.
+		\end{itemize}
+		\vfill
+		\textbf{Автоматическая ротация (удаление копий старше 7 дней):}
+		\vfill
+		\begin{lstlisting}[language=bash]
+			find "${BACKUP_DIR}" -type f -name "*.gz" -mtime +7 -exec rm {} \;
+		\end{lstlisting}
+	\end{frame}
+	
+	% Слайд 12: Тестирование - ИСПРАВЛЕНО
+	\begin{frame}[fragile]{Интеграционное тестирование (test\_mongo.sh)}
+		Для валидации корректности сборки репликации и проверки доступности СУБД перед продакшн-эксплуатацией разработан автоматический тест. Скрипт проверяет систему в три этапа:
+		\vfill
+		\begin{itemize}
+			\item \textbf{Этап 1}: Циклическая проверка готовности сетевого сокета СУБД (\texttt{db.adminCommand('ping')}) с таймаутом ожидания в 60 секунд.
+			\item \textbf{Этап 2}: Проверка статуса инициализации Replica Set.
+			\item \textbf{Этап 3}: Тест сквозной операции записи (\texttt{db.test.insertOne()}) для проверки доступности Primary-ноды на чтение и запись.
+		\end{itemize}
+		\vfill
+		\textbf{Запрос статуса репликации в скрипте:}
+		\vfill
+		\begin{lstlisting}[language=bash]
+			RS_STATUS=$(docker exec mongo-primary mongosh --quiet --eval "rs.status().ok")
+		\end{lstlisting}
+	\end{frame}
+	
+	% Слайд 13: CI/CD Линтеры
+	\begin{frame}{Конвейер CI/CD: Статический анализ кода}
+		Пайплайн настроен в среде \textbf{GitHub Actions} (конфигурация \texttt{pr-validation.yml}) и запускается автоматически на каждый Pull Request. На первом этапе отрабатывают линтеры качества кода:
+		\vfill
+		\begin{itemize}
+			\item \textbf{yamllint}: Проверяет структуру, синтаксические отступы и стандарты оформления во всех YAML-файлах проекта и конфигурациях Docker Compose.
+			\item \textbf{ShellCheck}: Анализирует bash-скрипты автоматизации на наличие скрытых логических ошибок, переполнений переменных и соответствие стандарту POSIX.
+			\item \textbf{Hadolint}: Проверяет инструкции Dockerfile на оптимазацию слоев сборки образов.
+		\end{itemize}
+	\end{frame}
+	
+	% Слайд 14: CI/CD Инфраструктурные тесты
+	\begin{frame}{Конвейер CI/CD: Инфраструктурные тесты и релизы}
+		\begin{block}{Эфемерное тестирование (In-Pipeline Tests)}
+			После успешного прохождения линтеров GitHub Actions разворачивает виртуальную машину-раннер на Ubuntu, собирает «с нуля» весь стек контейнеров через Docker Compose и прогоняет разработанный скрипт \texttt{test\_mongo.sh}. При падении хотя бы одного теста слияние кода в ветку \texttt{main} блокируется.
+		\end{block}
+		\vfill
+		\begin{itemize}
+			\item \textbf{Управление релизами (\texttt{release.yml})}: При публикации нового тега версии (\texttt{v*}) пайплайн автоматически сверяет временные метки изменений исходных кодов и скомпилированных документов. Это гарантирует, что в релиз уходят только актуальные и проверенные файлы.
+		\end{itemize}
+	\end{frame}
+	
+	% Слайд 15: Заключение
+	\begin{frame}{Заключение}
+		\begin{block}{Результаты выполнения курсового проекта}
+			\begin{itemize}
+				\item Спроектирована и развернута отказоустойчивая NoSQL-инфраструктура на базе распределенного кластера MongoDB Replica Set.
+				\item Обеспечена сетевая изоляция и защита данных (UFW, права 400, аутентификация по ключам), что снижает риски несанкционированного доступа.
+				\item Вся инфраструктура управляется декларативно в рамках концепции IaC через Docker Compose, Makefile и автоматизированные bash-сценарии.
+				\item Внедрен полноценный цикл автоматических проверок (линтеры, интеграционные тесты) в облачном пайплайне GitHub Actions.
+			\end{itemize}
+		\end{block}
+		\vfill
+		\begin{center}
+			\textsf{\large \textbf{Спасибо за внимание! Вопросы.}}
+		\end{center}
+	\end{frame}
+	
+\end{document}
